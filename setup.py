@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
     name="dikt",
-    version="0.0.1",
+    version="0.0.2",
     author="Maixent Chenebaux",
     author_email="max.chbx@gmail.com",
     description="Dictionary read on disk",

@@ -6,7 +6,7 @@ import json
 import os
 
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 
 class Dikt(object):
@@ -52,6 +52,7 @@ class Dikt(object):
         return value is not None
 
     def __getitem__(self, key):
+        key = str(key)
         chunk = self.get_chunk_from_key(key)
         value = self.find_key_in_chunk(key, chunk)
         if value is None:
