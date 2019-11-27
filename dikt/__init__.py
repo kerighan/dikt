@@ -1,6 +1,5 @@
 from tqdm import tqdm
 from enum import Enum
-import numpy as np
 import zipfile
 import shutil
 import json
@@ -68,6 +67,8 @@ def zipdir(path, ziph):
 
 
 def dump(data, name, dtype=None, is_array=None, chunks=-1, compression=0):
+    import numpy as np
+    
     if compression == 0:
         compression = zipfile.ZIP_STORED
     elif compression == 1:
