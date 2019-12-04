@@ -1,12 +1,11 @@
 from tqdm import tqdm
 from enum import Enum
 import zipfile
-import shutil
 import json
 import os
 
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 
 class Dikt(object):
@@ -20,7 +19,7 @@ class Dikt(object):
             array_dtype = lines[1]
             self.max_len = int(lines[2])
             self.chunk_keys = tuple(key for key in lines[3:])
-            self.chunks = len(self.chunk_keys) + 1
+            self.chunks = len(self.chunk_keys)
 
         if dtype == "int":
             self.dtype = int
@@ -28,6 +27,8 @@ class Dikt(object):
             self.dtype = float
         elif dtype == "list" or dtype == "dict":
             self.dtype = json.loads
+        elif dtype == "str":
+            self.dtype = lambda x: x
         elif dtype == "ndarray":
             import numpy as np
             self.dtype = lambda x: np.array(eval(x), dtype=array_dtype)
@@ -36,8 +37,8 @@ class Dikt(object):
     def get_chunk_from_key(self, key):
         for i, chunk_key in enumerate(self.chunk_keys):
             if key < chunk_key:
-                return i
-        return self.chunks - 2
+                return i - 1
+        return self.chunks - 1
 
     def find_key_in_chunk(self, key, chunk):
         with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
@@ -117,97 +118,52 @@ def zipdir(path, ziph):
 
 
 def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
+    from .utils import (
+        infer_compression, infer_dtype, clean_folder,
+        remove_tmp_folder, get_path, infer_chunks,
+        get_iterator, get_chunk_keys, verify)
     import numpy as np
 
     # compression type
-    if compression == 0:
-        compression = zipfile.ZIP_STORED
-    elif compression == 1:
-        compression = zipfile.ZIP_DEFLATED
-    elif compression == 2:
-        compression = zipfile.ZIP_BZIP2
-    else:
-        compression = zipfile.ZIP_LZMA
+    compression = infer_compression(compression)
 
-    path, name = filename.rsplit("/", 1)
-    if "." in name:
-        name, ext = name.rsplit(".", 1)
-    else:
-        name, ext = name, None
+    # get names
+    path, name, ext = get_path(filename)
 
-    assert chunks < 999999
-    if not os.path.exists(name):
-        os.makedirs(name)
-    else:
-        shutil.rmtree(name)
-        os.makedirs(name)
+    # clean zip folder
+    clean_folder(name)
 
     # compute multiple statistics
     num_entries = len(data)
-    # infer number of chunks
-    assert num_entries >= 1
-    if chunks == -1:
-        if num_entries <= 100:
-            chunks = 1
-        elif num_entries <= 1000:
-            chunks = 50
-        elif num_entries <= 10000:
-            chunks = 350
-        elif num_entries <= 100000:
-            chunks = 500
-        else:
-            chunks = 1000
-    assert num_entries >= chunks
 
-    # ranges_per_chunk = []
-    num_entries_per_chunk = num_entries // chunks
+    # infer number of chunks
+    chunks = infer_chunks(num_entries, chunks)
+
     # sort keys to assign to the corresponding chunk
     sorted_keys = sorted(data.keys())
 
     # infer datatype if not specified
-    first_value = data[sorted_keys[0]]
-    array_dtype = "none"
-    if isinstance(first_value, np.ndarray):
-        dtype = np.ndarray
-        array_dtype = first_value.dtype.__str__()
-    elif isinstance(first_value, str):
-        dtype = str
-    elif isinstance(first_value, int):
-        dtype = int
-    elif isinstance(first_value, list):
-        dtype = list
-    elif isinstance(first_value, dict):
-        dtype = dict
+    dtype, array_dtype = infer_dtype(data, sorted_keys)
+
+    # separate keys into chunks
+    chunk_keys = get_chunk_keys(sorted_keys, chunks)
 
     # write chunks
-    max_len = 0
-    chunk_keys = []
+    # ~~~~~~~~~~~~
     chunk = ""
-    chunk_assign = 1
-    chunk_key = sorted_keys[chunk_assign * num_entries_per_chunk]
-    assert "~" not in chunk_key and "\n" not in chunk_key
-    chunk_keys.append(chunk_key)
+    max_len = 0
+    chunk_assign = 0
+    for i, key in get_iterator(sorted_keys, num_entries, verbose):
+        # verify the key is correctly formed
+        verify(key)
 
-    if verbose:
-        iterator = tqdm(enumerate(sorted_keys),
-                        desc="building dict",
-                        total=num_entries)
-    else:
-        iterator = enumerate(sorted_keys)
-    for i, key in iterator:
-        assert "~" not in key and "\n" not in key
         # if key does not belong to the current chunk
-        if key >= chunk_key and chunk_assign < chunks:
-            with open(f"{name}/chunk-{chunk_assign - 1:06d}.txt", "w+") as f:
+        if chunk_assign != len(chunk_keys) - 1 and \
+                key >= chunk_keys[chunk_assign + 1]:
+            with open(f"{name}/chunk-{chunk_assign:06d}.txt", "w+") as f:
                 f.write(chunk)  # persist chunk to disk
             # update current chunk index
             chunk_assign += 1
-            # changed the key to compare
-            index_chunk = chunk_assign * num_entries_per_chunk
-            if index_chunk < len(sorted_keys):
-                chunk_key = sorted_keys[chunk_assign * num_entries_per_chunk]
-                assert "~" not in chunk_key
-                chunk_keys.append(chunk_key)
             # reset chunk content
             chunk = ""
 
@@ -215,7 +171,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         value = i
         if dtype == str:
             value = data[key]
-            assert "~" not in value and "\n" not in value
+            verify(value)
             str_len = len(str(value))
             if str_len > max_len:
                 max_len = str_len
@@ -237,8 +193,10 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
                 max_len = str_len
 
         chunk += f"K~{key}~{value}\n"
+
+    # dump the rest
     if len(chunk) > 0:
-        with open(f"{name}/chunk-{chunk_assign - 1:06d}.txt", "w") as f:
+        with open(f"{name}/chunk-{chunk_assign:06d}.txt", "w") as f:
             f.write(chunk)  # persist chunk to disk
 
     with open(f"{name}/config.txt", "w+") as f:
@@ -252,7 +210,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         zipf = zipfile.ZipFile(filename, "w", compression)
         zipdir(f"{name}/", zipf)
         zipf.close()
-        shutil.rmtree(f"{name}")
+        remove_tmp_folder(name)
 
 
 def load(filename):
