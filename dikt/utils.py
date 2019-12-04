@@ -47,7 +47,10 @@ def remove_tmp_folder(name):
 
 
 def get_path(filename):
-    path, name = filename.rsplit("/", 1)
+    if "/" in filename:
+        path, name = filename.rsplit("/", 1)
+    else:
+        path, name = "", filename
     if "." in name:
         name, ext = name.rsplit(".", 1)
     else:

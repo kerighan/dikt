@@ -206,7 +206,10 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
 
     # zip data
     if ext == "dikt":
-        filename = f"{path}/{name}.dikt"
+        if len(path) > 0:
+            filename = f"{path}/{name}.dikt"
+        else:
+            filename = f"{name}.dikt"
         zipf = zipfile.ZipFile(filename, "w", compression)
         zipdir(f"{name}/", zipf)
         zipf.close()
