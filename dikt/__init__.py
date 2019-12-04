@@ -5,7 +5,7 @@ import json
 import os
 
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 
 class Dikt(object):
@@ -158,7 +158,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         verify(key)
 
         # if key does not belong to the current chunk
-        if chunk_assign != len(chunk_keys) - python setup.py sdist bdist_wheel1 and \
+        if chunk_assign != len(chunk_keys) - 1 and \
                 key >= chunk_keys[chunk_assign + 1]:
             with open(f"{name}/chunk-{chunk_assign:06d}.txt", "w+") as f:
                 f.write(chunk)  # persist chunk to disk
