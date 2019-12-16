@@ -32,7 +32,6 @@ class Dikt(object):
         elif dtype == "ndarray":
             import numpy as np
             self.dtype = lambda x: np.array(eval(x), dtype=array_dtype)
-            # self.dtype = json.loads
 
     def get_chunk_from_key(self, key):
         for i, chunk_key in enumerate(self.chunk_keys):

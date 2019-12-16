@@ -72,6 +72,8 @@ def infer_chunks(num_entries, chunks):
         else:
             chunks = 1000
     assert num_entries >= chunks
+    if chunks == 0:
+        return 1
     return chunks
 
 

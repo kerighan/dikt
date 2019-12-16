@@ -18,11 +18,15 @@ pip install dikt
 import dikt
 
 # use any homogeneous dictionary
-mapping = {"key_" + str(i): i for i in range(10000)}
+mapping = {"key_" + str(i): i for i in range(1000000)}
+
 # dump the dictionary to file
-dikt.dump(mapping, "mapping.dikt")
-# loading object is very fast
+# compression is an integer from 0 to 3, 3 giving the smallest file size
+dikt.dump(mapping, "mapping.dikt", compression=1)
+
+# loading object is extremely fast
 mapping = dikt.load("mapping.dikt")
+
 # accessing item directly from the disk
 # without loading the whole JSON is ultra fast
 print(mapping["key_752"])
