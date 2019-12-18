@@ -190,6 +190,12 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
             str_len = len(value)
             if str_len > max_len:
                 max_len = str_len
+        elif dtype == float:
+            value = data[key]
+            assert isinstance(value, float)
+            str_len = len(str(value))
+            if str_len > max_len:
+                max_len = str_len
 
         chunk += f"K~{key}~{value}\n"
 

@@ -18,6 +18,8 @@ def infer_dtype(data, sorted_keys):
         dtype = list
     elif isinstance(first_value, dict):
         dtype = dict
+    elif isinstance(first_value, float):
+        dtype = float
     return dtype, array_dtype
 
 
