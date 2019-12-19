@@ -1,9 +1,7 @@
-from enum import Enum
 from zipfile import ZipFile
-import os
 
 
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 
 class Dikt(object):
@@ -107,10 +105,11 @@ class Dikt(object):
                     results[i] = self.get_key(key)
                 except KeyError:
                     pass
-        return results
+            return results
 
 
 def zipdir(path, ziph):
+    import os
     # ziph is zipfile handle
     for root, dirs, files in os.walk(path):
         for file in files:
