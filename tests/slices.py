@@ -1,6 +1,7 @@
 import json
 import dikt
 import numpy as np
+import time
 
 
 N = 5000000
@@ -8,8 +9,6 @@ slice_size = 5000
 
 
 def timeit(func):
-    import time
-
     def wrapper():
         start = time.time()
         func()
@@ -19,6 +18,7 @@ def timeit(func):
     return wrapper
 
 
+@timeit
 def create_dikt_mapping():
     mapping = {
         "key_" + str(i): i
@@ -42,10 +42,13 @@ def get_items_dict():
     with open("mapping.json", "r") as f:
         mapping = json.load(f)
 
+    start = time.time()
     res = {}
     keys = [f"key_{i}" for i in np.random.randint(0, N, slice_size)]
     for key in keys:
         res[key] = mapping[key]
+    duration = time.time() - start
+    print(f"{duration}s to iterate through the dict keys")
 
 
 @timeit
@@ -85,5 +88,5 @@ if __name__ == "__main__":
     # intelligent slicing methods allow slicing
     # to be faster when many keys are provided (ie. > 400)
     get_sliced_items()
-    get_items()
-    check_all_keys_exist()
+    # get_items()
+    # check_all_keys_exist()
