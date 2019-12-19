@@ -123,6 +123,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         get_iterator, get_chunk_keys, verify)
     import numpy as np
     import json
+    import os
 
     # compression type
     compression = infer_compression(compression)
@@ -146,13 +147,15 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
     dtype, array_dtype = infer_dtype(data, sorted_keys)
 
     # separate keys into chunks
-    chunk_keys = get_chunk_keys(sorted_keys, chunks)
+    chunk_keys, max_entries_per_chunk = get_chunk_keys(sorted_keys, chunks)
 
     # write chunks
     # ~~~~~~~~~~~~
-    chunk = ""
+    chunk = [None] * max_entries_per_chunk
     max_len = 0
+    chunk_len = 0
     chunk_assign = 0
+    chunk_filename = os.path.join(name, f"chunk-{chunk_assign:06d}.txt")
     for i, key in get_iterator(sorted_keys, num_entries, verbose):
         # verify the key is correctly formed
         verify(key)
@@ -160,14 +163,17 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         # if key does not belong to the current chunk
         if chunk_assign != len(chunk_keys) - 1 and \
                 key >= chunk_keys[chunk_assign + 1]:
-            with open(f"{name}/chunk-{chunk_assign:06d}.txt", "w+") as f:
-                f.write(chunk)  # persist chunk to disk
+            with open(chunk_filename, "w") as f:
+                f.write("".join(chunk[:chunk_len]))  # persist chunk to disk
             # update current chunk index
             chunk_assign += 1
             # reset chunk content
-            chunk = ""
+            chunk_len = 0
+            # update chunk filename
+            chunk_filename = os.path.join(
+                name, f"chunk-{chunk_assign:06d}.txt")
 
-        # if element is a numpy array
+        # [to fix]
         value = i
         if dtype == str:
             value = data[key]
@@ -198,12 +204,15 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
             if str_len > max_len:
                 max_len = str_len
 
-        chunk += f"K~{key}~{value}\n"
+        chunk[chunk_len] = f"K~{key}~{value}\n"
+        chunk_len += 1
 
     # dump the rest
     if len(chunk) > 0:
-        with open(f"{name}/chunk-{chunk_assign:06d}.txt", "w") as f:
-            f.write(chunk)  # persist chunk to disk
+        chunk_filename = os.path.join(
+            name, f"chunk-{chunk_assign:06d}.txt")
+        with open(chunk_filename, "w") as f:
+            f.write("".join(chunk[:chunk_len]))  # persist chunk to disk
 
     with open(f"{name}/config.txt", "w+") as f:
         config = "\n".join([dtype.__name__, array_dtype, str(max_len)]) + "\n"

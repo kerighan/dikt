@@ -99,7 +99,8 @@ def get_chunk_keys(seq, num):
         out[i] = seq[int(last)]
         last += avg
 
-    return out
+    max_num_entries = len(seq) // num + len(seq) % num
+    return out, max_num_entries
 
 
 def verify(chunk_key):
