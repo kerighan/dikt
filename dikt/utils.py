@@ -3,6 +3,7 @@ import os
 
 
 def infer_dtype(data, sorted_keys):
+    """get correct data type for the first element."""
     import numpy as np
 
     first_value = data[sorted_keys[0]]
@@ -24,6 +25,7 @@ def infer_dtype(data, sorted_keys):
 
 
 def infer_compression(compression):
+    """convert int:`compression` to correct compression level"""
     import zipfile
     if compression == 0:
         compression = zipfile.ZIP_STORED
@@ -49,18 +51,15 @@ def remove_tmp_folder(name):
 
 
 def get_path(filename):
-    if "/" in filename:
-        path, name = filename.rsplit("/", 1)
-    else:
-        path, name = "", filename
-    if "." in name:
-        name, ext = name.rsplit(".", 1)
-    else:
-        name, ext = name, None
+    """corrections by @philippeitis"""
+    path = os.path.dirname(filename)
+    name = os.path.basename(filename)
+    name, ext = os.path.splitext(name)
     return path, name, ext
 
 
 def infer_chunks(num_entries, chunks):
+    """infer the number of chunks by the size of the dictionary."""
     assert num_entries >= 1
     if chunks == -1:
         if num_entries <= 100:
@@ -80,6 +79,7 @@ def infer_chunks(num_entries, chunks):
 
 
 def get_iterator(sorted_keys, num_entries, verbose):
+    """utility function to add a progress bar if verbosity is set to True."""
     if verbose:
         from tqdm import tqdm
         iterator = tqdm(enumerate(sorted_keys),
@@ -91,12 +91,14 @@ def get_iterator(sorted_keys, num_entries, verbose):
 
 
 def get_chunk_keys(seq, num):
+    """speed improvements by @philippeitis"""
     avg = len(seq) / float(num)
-    out = []
+    out = [None] * num
     last = 0.0
-    while last < len(seq):
-        out.append(seq[int(last)])
+    for i in range(num):
+        out[i] = seq[int(last)]
         last += avg
+
     return out
 
 

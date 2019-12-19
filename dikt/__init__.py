@@ -211,15 +211,14 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         f.write(config)
 
     # zip data
-    if ext == "dikt":
-        if len(path) > 0:
-            filename = f"{path}/{name}.dikt"
-        else:
-            filename = f"{name}.dikt"
-        zipf = ZipFile(filename, "w", compression)
-        zipdir(f"{name}/", zipf)
-        zipf.close()
-        remove_tmp_folder(name)
+    if len(path) > 0:
+        filename = f"{path}/{name}{ext}"
+    else:
+        filename = f"{name}{ext}"
+    zipf = ZipFile(filename, "w", compression)
+    zipdir(f"{name}/", zipf)
+    zipf.close()
+    remove_tmp_folder(name)
 
 
 def load(filename):
