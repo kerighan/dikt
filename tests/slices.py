@@ -52,7 +52,10 @@ def get_items_dict():
 def get_sliced_items():
     print("\nDikt: Using dikt's slicing method")
     mapping = dikt.load("mapping.dikt")
-    mapping[[f"key_{i}" for i in np.random.randint(0, N, slice_size)]]
+    keys = [f"key_{i}" for i in np.random.randint(0, N, slice_size)]
+    data = mapping[keys]
+    for i, item in enumerate(data):
+        assert item == int(keys[i].split("_")[1])
 
 
 @timeit
@@ -65,6 +68,17 @@ def get_items():
         res[key] = mapping[key]
 
 
+def check_all_keys_exist():
+    print("\nDikt: sanity check, checks that all keys exist")
+    mapping = dikt.load("mapping.dikt")
+    for i in range(N):
+        key = f"key_{i}"
+        val = mapping[key]
+        if val != i:
+            raise AssertionError(
+                f"{key} does not match {i} (got {val} instead)")
+
+
 if __name__ == "__main__":
     create_dikt_mapping()
     get_items_dict()
@@ -72,3 +86,4 @@ if __name__ == "__main__":
     # to be faster when many keys are provided (ie. > 400)
     get_sliced_items()
     get_items()
+    check_all_keys_exist()

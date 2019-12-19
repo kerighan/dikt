@@ -52,7 +52,6 @@ class Dikt(object):
         return self.dtype(data[comma:comma + end])
     
     def find_keys_in_chunk(self, keys, chunk):
-        keys = sorted(keys)
         with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
             data = f.read().decode("utf8")
             res = []
@@ -65,7 +64,7 @@ class Dikt(object):
                     comma = start + len(key)
                     end = data[comma:comma + self.max_len + 1].find("\n")
                     res.append(self.dtype(data[comma:comma + end]))
-                    data = data[comma + end:]
+                    data = data[start:]
         return res
 
     def __contains__(self, key):
@@ -86,26 +85,29 @@ class Dikt(object):
         if value is None:
             raise KeyError(key)
         return value
-    
+
     def get_keys(self, keys):
-        results = {}
         if len(keys) >= 400:
             from collections import defaultdict
+            results = {}
             resp_chunks = defaultdict(list)
             for i, key in enumerate(keys):
                 chunk = self.get_chunk_from_key(key)
                 resp_chunks[chunk].append(key)
 
-            for chunk, keys in resp_chunks.items():
-                res = self.find_keys_in_chunk(keys, chunk)
-                for i in range(len(keys)):
-                    results[keys[i]] = res[i]
+            for chunk, chunk_keys in resp_chunks.items():
+                sorted_keys = sorted(chunk_keys)
+                res = self.find_keys_in_chunk(sorted_keys, chunk)
+                for i in range(len(sorted_keys)):
+                    results[sorted_keys[i]] = res[i]
+            return [results[keys[i]] for i in range(len(keys))]
         else:
-            for key in keys:
+            results = [None] * len(keys)
+            for i, key in enumerate(keys):
                 try:
-                    results[key] = self.get_key(key)
+                    results[i] = self.get_key(key)
                 except KeyError:
-                    results[key] = None
+                    pass
         return results
 
 
