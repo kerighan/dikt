@@ -1,7 +1,5 @@
-from tqdm import tqdm
 from enum import Enum
-import zipfile
-import json
+from zipfile import ZipFile
 import os
 
 
@@ -10,7 +8,7 @@ __version__ = "0.0.5"
 
 class Dikt(object):
     def __init__(self, filename):
-        self.zipf = zipfile.ZipFile(filename)
+        self.zipf = ZipFile(filename)
         self.name = filename.split("/")[-1].split(".")[0]
         with self.zipf.open(self.name + "/config.txt") as f:
             data = f.read().decode("utf8")
@@ -26,7 +24,8 @@ class Dikt(object):
         elif dtype == "float":
             self.dtype = float
         elif dtype == "list" or dtype == "dict":
-            self.dtype = json.loads
+            from json import loads
+            self.dtype = loads
         elif dtype == "str":
             self.dtype = lambda x: x
         elif dtype == "ndarray":
@@ -50,7 +49,7 @@ class Dikt(object):
             comma = start + len(key)
             end = data[comma:comma + self.max_len + 1].find("\n")
         return self.dtype(data[comma:comma + end])
-    
+
     def find_keys_in_chunk(self, keys, chunk):
         with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
             data = f.read().decode("utf8")
@@ -124,6 +123,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
         remove_tmp_folder, get_path, infer_chunks,
         get_iterator, get_chunk_keys, verify)
     import numpy as np
+    import json
 
     # compression type
     compression = infer_compression(compression)
@@ -217,7 +217,7 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
             filename = f"{path}/{name}.dikt"
         else:
             filename = f"{name}.dikt"
-        zipf = zipfile.ZipFile(filename, "w", compression)
+        zipf = ZipFile(filename, "w", compression)
         zipdir(f"{name}/", zipf)
         zipf.close()
         remove_tmp_folder(name)
