@@ -1,11 +1,11 @@
 from zipfile import ZipFile
 
-print("yo")
-__version__ = "0.0.7"
+
+__version__ = "1.0.0"
 
 
 class Dikt(object):
-    def __init__(self, filename):
+    def __init__(self, filename, cache=False):
         self.zipf = ZipFile(filename)
         self.name = filename.split("/")[-1].split(".")[0]
         with self.zipf.open(self.name + "/config.txt") as f:
@@ -14,8 +14,7 @@ class Dikt(object):
             dtype = lines[0]
             array_dtype = lines[1]
             self.max_len = int(lines[2])
-            self.chunk_keys = tuple(key for key in lines[3:])
-            self.chunks = len(self.chunk_keys)
+            self.num_chunks = int(lines[3])
 
         if dtype == "int":
             self.dtype = int
@@ -30,22 +29,38 @@ class Dikt(object):
             import numpy as np
             self.dtype = lambda x: np.array(eval(x), dtype=array_dtype)
 
+        self.cache = cache
+        if cache:
+            self.cache_chunks = {}
+    
+    def extract_zip(self, input_zip):
+        input_zip=ZipFile(input_zip)
+        return {name: input_zip.read(name) for name in input_zip.namelist()}
+
     def get_chunk_from_key(self, key):
-        for i, chunk_key in enumerate(self.chunk_keys):
-            if key < chunk_key:
-                return i - 1
-        return self.chunks - 1
+        chunk = hashkey(key, self.num_chunks)
+        return chunk
 
     def find_key_in_chunk(self, key, chunk):
-        with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
-            data = f.read().decode("utf8")
-            key = f"K~{key}~"
-            start = data.find(key)
-            if start == -1:
-                return None
+        if self.cache:
+            if chunk in self.cache_chunks:
+                data = self.cache_chunks[chunk]
+            else:
+                with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                    data = f.read().decode("utf8")
+                self.cache_chunks[chunk] = data
+        else:
+            with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                data = f.read().decode("utf8")
 
-            comma = start + len(key)
-            end = data[comma:comma + self.max_len + 1].find("\n")
+        key = f"K~{key}~"
+        start = data.find(key)
+        if start == -1:
+            return None
+
+        comma = start + len(key)
+        end = data[comma:comma + self.max_len + 1].find("\n")
+
         return self.dtype(data[comma:comma + end])
 
     def find_keys_in_chunk(self, keys, chunk):
@@ -110,17 +125,16 @@ class Dikt(object):
 
 def zipdir(path, ziph):
     import os
-    # ziph is zipfile handle
     for root, dirs, files in os.walk(path):
         for file in files:
             ziph.write(os.path.join(root, file))
 
 
-def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
+def dump(data, filename, dtype=None, chunks=-1, items_per_chunk=None, compression=0, verbose=True):
     from .utils import (
-        infer_compression, infer_dtype, clean_folder,
-        remove_tmp_folder, get_path, infer_chunks,
-        get_iterator, get_chunk_keys, verify)
+        infer_compression, infer_dtype, clean_folder, infer_chunks,
+        remove_tmp_folder, get_path, get_iterator, verify)
+    from collections import defaultdict
     import numpy as np
     import json
     import os
@@ -136,87 +150,62 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
 
     # compute multiple statistics
     num_entries = len(data)
+    if items_per_chunk is not None:
+        num_chunks = num_entries // items_per_chunk
+    else:
+        num_chunks = infer_chunks(num_entries, chunks)
 
-    # infer number of chunks
-    chunks = infer_chunks(num_entries, chunks)
+    # map each key to the right chunk using the hash function
+    hash2chunk = defaultdict(list)
+    for key in data.keys():
+        key_bin = hashkey(key, num_chunks)
+        hash2chunk[key_bin].append(key)
 
-    # sort keys to assign to the corresponding chunk
-    sorted_keys = sorted(data.keys())
-
-    # infer datatype if not specified
-    dtype, array_dtype = infer_dtype(data, sorted_keys)
-
-    # separate keys into chunks
-    chunk_keys, max_entries_per_chunk = get_chunk_keys(sorted_keys, chunks)
+    # write files
+    dtype, array_dtype = infer_dtype(data[key])        
 
     # write chunks
     # ~~~~~~~~~~~~
-    chunk = [None] * max_entries_per_chunk
     max_len = 0
-    chunk_len = 0
-    chunk_assign = 0
-    chunk_filename = os.path.join(name, f"chunk-{chunk_assign:06d}.txt")
-    for i, key in get_iterator(sorted_keys, num_entries, verbose):
-        # verify the key is correctly formed
-        verify(key)
+    for i in get_iterator(num_chunks, verbose):
+        chunks = [None] * len(hash2chunk[i])
+        chunk_filename = os.path.join(name, f"chunk-{i:06d}.txt")
+        for idx, key in enumerate(hash2chunk[i]):
+            verify(key)
 
-        # if key does not belong to the current chunk
-        if chunk_assign != len(chunk_keys) - 1 and \
-                key >= chunk_keys[chunk_assign + 1]:
-            with open(chunk_filename, "w") as f:
-                f.write("".join(chunk[:chunk_len]))  # persist chunk to disk
-            # update current chunk index
-            chunk_assign += 1
-            # reset chunk content
-            chunk_len = 0
-            # update chunk filename
-            chunk_filename = os.path.join(
-                name, f"chunk-{chunk_assign:06d}.txt")
+            # get string value
+            if dtype == str:
+                value = data[key]
+                verify(value)
+            elif dtype == int:
+                value = data[key]
+                assert isinstance(value, int)
+            elif dtype == list or dtype == dict:
+                value = json.dumps(data[key])
+            elif dtype == np.ndarray:
+                value = json.dumps(list(data[key]))
+            elif dtype == float:
+                value = data[key]
+                assert isinstance(value, float)
 
-        # [to fix]
-        value = i
-        if dtype == str:
-            value = data[key]
-            verify(value)
-            str_len = len(str(value))
-            if str_len > max_len:
-                max_len = str_len
-        elif dtype == int:
-            value = data[key]
-            assert isinstance(value, int)
-            str_len = len(str(value))
-            if str_len > max_len:
-                max_len = str_len
-        elif dtype == list or dtype == dict:
-            value = json.dumps(data[key])
+            value = str(value)
             str_len = len(value)
             if str_len > max_len:
                 max_len = str_len
-        elif dtype == np.ndarray:
-            value = json.dumps(list(data[key]))
-            str_len = len(value)
-            if str_len > max_len:
-                max_len = str_len
-        elif dtype == float:
-            value = data[key]
-            assert isinstance(value, float)
-            str_len = len(str(value))
-            if str_len > max_len:
-                max_len = str_len
+            
+            chunks[idx] = f"K~{key}~{value}\n"
 
-        chunk[chunk_len] = f"K~{key}~{value}\n"
-        chunk_len += 1
-
-    # dump the rest
-    if len(chunk) > 0:
-        chunk_filename = os.path.join(
-            name, f"chunk-{chunk_assign:06d}.txt")
+        # temporary save chunk to disk
         with open(chunk_filename, "w") as f:
-            f.write("".join(chunk[:chunk_len]))  # persist chunk to disk
+            f.write("".join(chunks))  # persist chunk to disk
 
+    # put config inside folder
     with open(f"{name}/config.txt", "w+") as f:
-        config = "\n".join([dtype.__name__, array_dtype, str(max_len)]) + "\n"
-        config += "\n".join(chunk_keys)
+        config = "\n".join([
+            dtype.__name__,
+            array_dtype,
+            str(max_len),
+            str(num_chunks)])
         f.write(config)
 
     # zip data
@@ -230,5 +219,15 @@ def dump(data, filename, dtype=None, chunks=-1, compression=0, verbose=False):
     remove_tmp_folder(name)
 
 
-def load(filename):
-    return Dikt(filename)
+def load(filename, cache=False):
+    return Dikt(filename, cache=False)
+
+
+def hashkey(text, num_chunks):
+    hashsum = 0
+    text_len = len(text)
+    for i, c in enumerate(text, 1):
+        ord_c = ord(c)
+        hashsum += (text_len + i) ** ord_c + ord_c
+    hashsum = hashsum % num_chunks
+    return hashsum
