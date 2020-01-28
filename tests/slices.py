@@ -6,7 +6,7 @@ import time
 
 
 N = 500000
-slice_size = 1000
+slice_size = 10
 
 
 def timeit(func):
@@ -29,7 +29,7 @@ def create_dikt_mapping():
 
     # dump using Dikt
     start = time.time()
-    dikt.dump(mapping, "mapping.dikt", compression=1)
+    dikt.dump(mapping, "mapping.dikt", compression=3)
     duration = time.time() - start
     print(f"[*] saved with Dikt in {duration}")
 
@@ -119,7 +119,7 @@ def check_all_keys_exist():
 
 
 if __name__ == "__main__":
-    create_dikt_mapping()
+    # create_dikt_mapping()
     get_items_dict()
     # intelligent slicing methods allow slicing
     # to be faster when many keys are provided (ie. > 400)
