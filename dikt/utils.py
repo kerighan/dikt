@@ -69,6 +69,7 @@ def get_iterator(num_chunks, verbose):
 
 
 def verify(chunk_key):
+    assert isinstance(chunk_key, str))
     assert "~" not in chunk_key and "\n" not in chunk_key
 
 

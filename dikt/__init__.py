@@ -32,10 +32,6 @@ class Dikt(object):
         self.cache = cache
         if cache:
             self.cache_chunks = {}
-    
-    def extract_zip(self, input_zip):
-        input_zip=ZipFile(input_zip)
-        return {name: input_zip.read(name) for name in input_zip.namelist()}
 
     def get_chunk_from_key(self, key):
         chunk = hashkey(key, self.num_chunks)
