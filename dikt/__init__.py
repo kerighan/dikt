@@ -1,63 +1,83 @@
-from zipfile import ZipFile
-
-
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 
 class Dikt(object):
-    def __init__(self, filename, cache=False):
+    def __init__(self, filename, cache_values=False, cache_chunks=False):
+        from .zipfile2 import ZipFile
         self.zipf = ZipFile(filename)
         self.name = filename.split("/")[-1].split(".")[0]
+
         with self.zipf.open(self.name + "/config.txt") as f:
-            data = f.read().decode("utf8")
-            lines = data.splitlines()
-            dtype = lines[0]
-            array_dtype = lines[1]
-            self.max_len = int(lines[2])
-            self.num_chunks = int(lines[3])
+            for i, line in enumerate(f):
+                line = line.decode("utf8").strip()
+                if i == 0:
+                    dtype = line
+                    if dtype == "int":
+                        self.dtype = int
+                    elif dtype == "float":
+                        self.dtype = float
+                    elif dtype == "list" or dtype == "dict":
+                        from json import loads
+                        self.dtype = loads
+                    elif dtype == "str":
+                        self.dtype = lambda x: x
+                    elif dtype == "ndarray":
+                        import numpy as np
+                        self.dtype = lambda x: np.array(
+                            eval(x), dtype=array_dtype)
+                elif i == 1:
+                    array_dtype = line
+                elif i == 2:
+                    self.max_len = int(line)
+                elif i == 3:
+                    self.num_chunks = int(line)
 
-        if dtype == "int":
-            self.dtype = int
-        elif dtype == "float":
-            self.dtype = float
-        elif dtype == "list" or dtype == "dict":
-            from json import loads
-            self.dtype = loads
-        elif dtype == "str":
-            self.dtype = lambda x: x
-        elif dtype == "ndarray":
-            import numpy as np
-            self.dtype = lambda x: np.array(eval(x), dtype=array_dtype)
-
-        self.cache = cache
-        if cache:
-            self.cache_chunks = {}
+        self.cache_values = cache_values
+        self.cache_chunks = cache_chunks
+        if cache_values:
+            self.cached_values = {}
+        if cache_chunks:
+            self.cached_chunks = {}
 
     def get_chunk_from_key(self, key):
         chunk = hashkey(key, self.num_chunks)
         return chunk
 
     def find_key_in_chunk(self, key, chunk):
-        if self.cache:
-            if chunk in self.cache_chunks:
-                data = self.cache_chunks[chunk]
-            else:
-                with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
-                    data = f.read().decode("utf8")
-                self.cache_chunks[chunk] = data
-        else:
+        key = f"K~{key}~"
+        key_len = len(key)
+        data = None
+
+        # check if already in cache
+        if self.cache_values:
+            if key in self.cached_values:
+                return self.cached_values[key]
+        if self.cache_chunks:
+            if chunk in self.cached_chunks:
+                data = self.cached_chunks[chunk]
+        
+        # if not, get data
+        if data is None:
             with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
                 data = f.read().decode("utf8")
 
-        key = f"K~{key}~"
+        # find key, value pair in data
         start = data.find(key)
         if start == -1:
+            if self.cache_values:
+                self.cached_values[key] = None
             return None
 
-        comma = start + len(key)
+        comma = start + key_len
         end = data[comma:comma + self.max_len + 1].find("\n")
+        value = self.dtype(data[comma:comma + end])
 
-        return self.dtype(data[comma:comma + end])
+        # populate cache
+        if self.cache_values:
+            self.cached_values[key] = value
+        if self.cache_chunks:
+            self.cached_chunks[chunk] = data
+        return value
 
     def find_keys_in_chunk(self, keys, chunk):
         with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
@@ -85,6 +105,12 @@ class Dikt(object):
             return self.get_keys(key)
         else:
             return self.get_key(key)
+
+    def get(self, key, value=None):
+        try:
+            return self.get_key(key)
+        except KeyError:
+            return value
 
     def get_key(self, key):
         key = str(key)
@@ -118,6 +144,28 @@ class Dikt(object):
                     pass
             return results
 
+    def to_dict(self):
+        import re
+        d = {}
+        for chunk in range(self.num_chunks):
+            with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                data = f.read().decode("utf8").splitlines()
+                for line in data:
+                    match = re.match(r"K\~(.*)\~(.*)", line)
+                    d[match.group(1)] = self.dtype(match.group(2))
+        return d
+
+    def __iter__(self):
+        import re
+        for chunk in range(self.num_chunks):
+            with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                data = f.read().decode("utf8").splitlines()
+                for line in data:
+                    match = re.match(r"K\~(.*)\~(.*)", line)
+                    key = match.group(1)
+                    value = self.dtype(match.group(2))
+                    yield key, value
+
 
 def zipdir(path, ziph):
     import os
@@ -126,11 +174,20 @@ def zipdir(path, ziph):
             ziph.write(os.path.join(root, file))
 
 
-def dump(data, filename, dtype=None, chunks=-1, items_per_chunk=None, compression=0, verbose=True):
+def dump(
+    data,
+    filename,
+    dtype=None,
+    chunks=-1,
+    items_per_chunk=None,
+    compression=1,
+    verbose=True
+):
     from .utils import (
         infer_compression, infer_dtype, clean_folder, infer_chunks,
         remove_tmp_folder, get_path, get_iterator, verify)
     from collections import defaultdict
+    from zipfile import ZipFile
     import numpy as np
     import json
     import os
@@ -188,7 +245,7 @@ def dump(data, filename, dtype=None, chunks=-1, items_per_chunk=None, compressio
             str_len = len(value)
             if str_len > max_len:
                 max_len = str_len
-            
+
             chunks[idx] = f"K~{key}~{value}\n"
 
         # temporary save chunk to disk
@@ -209,14 +266,18 @@ def dump(data, filename, dtype=None, chunks=-1, items_per_chunk=None, compressio
         filename = f"{path}/{name}{ext}"
     else:
         filename = f"{name}{ext}"
+
     zipf = ZipFile(filename, "w", compression)
     zipdir(f"{name}/", zipf)
     zipf.close()
     remove_tmp_folder(name)
 
 
-def load(filename, cache=False):
-    return Dikt(filename, cache=False)
+def load(filename, cache_values=False, cache_chunks=False):
+    return Dikt(
+        filename,
+        cache_values=cache_values,
+        cache_chunks=cache_chunks)
 
 
 def hashkey(text, num_chunks):
