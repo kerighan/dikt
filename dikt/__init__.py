@@ -1,4 +1,4 @@
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 
 class Dikt(object):
@@ -6,6 +6,7 @@ class Dikt(object):
         from .zipfile2 import ZipFile
         self.zipf = ZipFile(filename)
         self.name = filename.split("/")[-1].split(".")[0]
+        self.filename = filename
 
         with self.zipf.open(self.name + "/config.txt") as f:
             for i, line in enumerate(f):
@@ -43,11 +44,42 @@ class Dikt(object):
         chunk = hashkey(key, self.num_chunks)
         return chunk
 
+    def get_chunk_data(self, chunk):
+        data = None
+
+        # check if already in cache
+        if self.cache_chunks:
+            if chunk in self.cached_chunks:
+                data = self.cached_chunks[chunk]
+
+        # if not, get data
+        if data is None:
+            with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                data = f.read().decode("utf8")
+        return data
+
+    def find_key_in_data(self, key, data):
+        k = f"K~{key}~"
+        key_len = len(k)
+
+        # find key, value pair in data
+        start = data.find(k)
+        if start == -1:
+            if self.cache_values:
+                self.cached_values[k] = None
+            return None
+
+        comma = start + key_len
+        end = data[comma:comma + self.max_len + 1].find("\n")
+        value = self.dtype(data[comma:comma + end])
+        return value
+
     def find_key_in_chunk(self, key, chunk):
         key = f"K~{key}~"
         key_len = len(key)
-        data = None
 
+        # get data
+        data = None
         # check if already in cache
         if self.cache_values:
             if key in self.cached_values:
@@ -55,7 +87,7 @@ class Dikt(object):
         if self.cache_chunks:
             if chunk in self.cached_chunks:
                 data = self.cached_chunks[chunk]
-        
+
         # if not, get data
         if data is None:
             with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
@@ -78,22 +110,6 @@ class Dikt(object):
         if self.cache_chunks:
             self.cached_chunks[chunk] = data
         return value
-
-    def find_keys_in_chunk(self, keys, chunk):
-        with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
-            data = f.read().decode("utf8")
-            res = []
-            for key in keys:
-                key = f"K~{key}~"
-                start = data.find(key)
-                if start == -1:
-                    res.append(None)
-                else:
-                    comma = start + len(key)
-                    end = data[comma:comma + self.max_len + 1].find("\n")
-                    res.append(self.dtype(data[comma:comma + end]))
-                    data = data[start:]
-        return res
 
     def __contains__(self, key):
         chunk = self.get_chunk_from_key(key)
@@ -121,28 +137,23 @@ class Dikt(object):
         return value
 
     def get_keys(self, keys):
-        if len(keys) >= 400:
-            from collections import defaultdict
-            results = {}
-            resp_chunks = defaultdict(list)
-            for i, key in enumerate(keys):
-                chunk = self.get_chunk_from_key(key)
-                resp_chunks[chunk].append(key)
+        from collections import defaultdict
 
-            for chunk, chunk_keys in resp_chunks.items():
-                sorted_keys = sorted(chunk_keys)
-                res = self.find_keys_in_chunk(sorted_keys, chunk)
-                for i in range(len(sorted_keys)):
-                    results[sorted_keys[i]] = res[i]
-            return [results[keys[i]] for i in range(len(keys))]
-        else:
-            results = [None] * len(keys)
-            for i, key in enumerate(keys):
-                try:
-                    results[i] = self.get_key(key)
-                except KeyError:
-                    pass
-            return results
+        results = [None] * len(keys)
+        chunk2keys = defaultdict(list)
+        key2pos = defaultdict(list)
+        for i, key in enumerate(keys):
+            chunk = self.get_chunk_from_key(key)
+            chunk2keys[chunk].append(key)
+            key2pos[key].append(i)
+
+        for chunk, chunk_keys in chunk2keys.items():
+            data = self.get_chunk_data(chunk)
+            for current_key in chunk_keys:
+                value = self.find_key_in_data(current_key, data)
+                for index in key2pos[current_key]:
+                    results[index] = value
+        return results
 
     def to_dict(self):
         import re
