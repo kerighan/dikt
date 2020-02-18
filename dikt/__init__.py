@@ -2,36 +2,27 @@ __version__ = "1.0.2"
 
 
 class Dikt(object):
-    def __init__(self, filename, cache_values=False, cache_chunks=False):
-        from .zipfile2 import ZipFile
-        self.zipf = ZipFile(filename)
+    def __init__(
+        self,
+        filename,
+        method="zip",
+        cache_values=False,
+        cache_chunks=False
+    ):
         self.name = filename.split("/")[-1].split(".")[0]
         self.filename = filename
+        self.method = method
 
-        with self.zipf.open(self.name + "/config.txt") as f:
-            for i, line in enumerate(f):
-                line = line.decode("utf8").strip()
-                if i == 0:
-                    dtype = line
-                    if dtype == "int":
-                        self.dtype = int
-                    elif dtype == "float":
-                        self.dtype = float
-                    elif dtype == "list" or dtype == "dict":
-                        from json import loads
-                        self.dtype = loads
-                    elif dtype == "str":
-                        self.dtype = lambda x: x
-                    elif dtype == "ndarray":
-                        import numpy as np
-                        self.dtype = lambda x: np.array(
-                            eval(x), dtype=array_dtype)
-                elif i == 1:
-                    array_dtype = line
-                elif i == 2:
-                    self.max_len = int(line)
-                elif i == 3:
-                    self.num_chunks = int(line)
+        if method == "zip":
+            from .zipfile2 import ZipFile
+            self.zipf = ZipFile(filename)
+            with self.zipf.open(self.name + "/config.txt") as f:
+                self.parse_config(f)
+        elif method == "tar":
+            import tarfile
+            self.tar = tarfile.open(filename, "r")
+            f = self.tar.extractfile(self.name + "/config.txt")
+            self.parse_config(f)
 
         self.cache_values = cache_values
         self.cache_chunks = cache_chunks
@@ -39,6 +30,31 @@ class Dikt(object):
             self.cached_values = {}
         if cache_chunks:
             self.cached_chunks = {}
+
+    def parse_config(self, f):
+        for i, line in enumerate(f):
+            line = line.decode("utf8").strip()
+            if i == 0:
+                dtype = line
+                if dtype == "int":
+                    self.dtype = int
+                elif dtype == "float":
+                    self.dtype = float
+                elif dtype == "list" or dtype == "dict":
+                    from json import loads
+                    self.dtype = loads
+                elif dtype == "str":
+                    self.dtype = lambda x: x
+                elif dtype == "ndarray":
+                    import numpy as np
+                    self.dtype = lambda x: np.array(
+                        eval(x), dtype=array_dtype)
+            elif i == 1:
+                array_dtype = line
+            elif i == 2:
+                self.max_len = int(line)
+            elif i == 3:
+                self.num_chunks = int(line)
 
     def get_chunk_from_key(self, key):
         chunk = hashkey(key, self.num_chunks)
@@ -90,8 +106,13 @@ class Dikt(object):
 
         # if not, get data
         if data is None:
-            with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
-                data = f.read().decode("utf8")
+            if self.method == "zip":
+                with self.zipf.open(self.name + f"/chunk-{chunk:06d}.txt") as f:
+                    data = f.read().decode("utf8")
+            elif self.method == "tar":
+                data = self.tar.extractfile(
+                    self.name + f"/chunk-{chunk:06d}.txt").read().decode("utf8")
+                # print(f)
 
         # find key, value pair in data
         start = data.find(key)
@@ -192,6 +213,7 @@ def dump(
     chunks=-1,
     items_per_chunk=None,
     compression=1,
+    method="zip",
     verbose=True
 ):
     from .utils import (
@@ -278,15 +300,22 @@ def dump(
     else:
         filename = f"{name}{ext}"
 
-    zipf = ZipFile(filename, "w", compression)
-    zipdir(f"{name}/", zipf)
-    zipf.close()
-    remove_tmp_folder(name)
+    if method == "zip":
+        zipf = ZipFile(filename, "w", compression)
+        zipdir(f"{name}/", zipf)
+        zipf.close()
+        remove_tmp_folder(name)
+    elif method == "tar":
+        import tarfile
+        import os.path
+        with tarfile.open(filename, "w|7z") as tar:
+            tar.add(name, arcname=os.path.basename(name))
 
 
-def load(filename, cache_values=False, cache_chunks=False):
+def load(filename, method="zip", cache_values=False, cache_chunks=False):
     return Dikt(
         filename,
+        method=method,
         cache_values=cache_values,
         cache_chunks=cache_chunks)
 
