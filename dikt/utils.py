@@ -20,6 +20,8 @@ def infer_dtype(value):
         dtype = dict
     elif isinstance(value, float):
         dtype = float
+    else:
+        raise TypeError(f"{type(value)}: type not supported")
     return dtype, array_dtype
 
 
@@ -69,8 +71,9 @@ def get_iterator(num_chunks, verbose):
 
 
 def verify(chunk_key):
-    assert isinstance(chunk_key, str)
-    assert "~" not in chunk_key and "\n" not in chunk_key
+    assert isinstance(chunk_key, (str, int))
+    if isinstance(chunk_key, str):
+        assert "~" not in chunk_key and "\n" not in chunk_key
 
 
 def infer_chunks(num_entries, chunks):

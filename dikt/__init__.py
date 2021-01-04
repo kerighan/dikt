@@ -43,6 +43,7 @@ class Dikt(object):
                 elif dtype == "list" or dtype == "dict":
                     from json import loads
                     self.dtype = loads
+                    # self.dtype = eval
                 elif dtype == "str":
                     self.dtype = lambda x: x
                 elif dtype == "ndarray":
@@ -141,6 +142,8 @@ class Dikt(object):
         if isinstance(key, list):
             return self.get_keys(key)
         else:
+            if not isinstance(key, str):
+                key = str(key)
             return self.get_key(key)
 
     def get(self, key, value=None):
@@ -248,7 +251,7 @@ def dump(
         hash2chunk[key_bin].append(key)
 
     # write files
-    dtype, array_dtype = infer_dtype(data[key])        
+    dtype, array_dtype = infer_dtype(data[key])
 
     # write chunks
     # ~~~~~~~~~~~~
@@ -321,6 +324,9 @@ def load(filename, method="zip", cache_values=False, cache_chunks=False):
 
 
 def hashkey(text, num_chunks):
+    if not isinstance(text, str):
+        text = str(text)
+
     hashsum = 0
     text_len = len(text)
     for i, c in enumerate(text, 1):
